@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 
+from dotenv import load_dotenv
+
 
 @dataclass(frozen=True)
 class Settings:
@@ -35,6 +37,9 @@ def _load_env_file(env_file: str = ".env") -> None:
         key = key.strip()
         value = value.strip().strip('"').strip("'")
         os.environ.setdefault(key, value)
+    """Load environment variables on demand from the provided env file."""
+
+    load_dotenv(dotenv_path=env_file, override=False)
 
 
 def load_settings(env_file: str = ".env") -> Settings:
@@ -47,7 +52,7 @@ def load_settings(env_file: str = ".env") -> Settings:
     openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
     ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").strip()
     requirement_file = Path(os.getenv("REQUIREMENT_FILE", "requirement.txt")).expanduser()
-    output_file = Path(os.getenv("OUTPUT_FILE", "output.md")).expanduser()
+    output_file = Path(os.getenv("OUTPUT_FILE", "regression_test_cases.md")).expanduser()
 
     if llm_provider != "openai":
         raise ValueError(
