@@ -1,0 +1,4 @@
+As a shopper, I want to add products to a cart so that I can purchase multiple items in one checkout.
+As a shopper, I want to apply a valid promo code so that I receive eligible discounts.
+As a shopper, I want the system to reject expired promo codes so that invalid discounts are not applied.
+As a shopper, I want to checkout with saved address and payment details so that purchasing is fast and seamless.
