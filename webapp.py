@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, unquote_plus, urlparse
 import cgi
 
@@ -20,18 +21,16 @@ class RegressionWebHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND, "Route not found")
             return
 
-        try:
-            settings = load_settings(require_api_key=False)
-            requirement_text = ""
-            if settings.requirement_file.exists():
-                requirement_text = settings.requirement_file.read_text(encoding="utf-8")
+        settings = load_settings()
+        requirement_text = ""
+        if settings.requirement_file.exists():
+            requirement_text = settings.requirement_file.read_text(encoding="utf-8")
 
-            query = parse_qs(parsed.query)
-            message = query.get("message", [""])[0]
-            body = self._render_index(requirement_text=requirement_text, message=unquote_plus(message))
-            self._send_html(body)
-        except Exception as exc:  # pragma: no cover - defensive top-level request handling
-            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
+        query = parse_qs(parsed.query)
+        message = query.get("message", [""])[0]
+        body = self._render_index(requirement_text=requirement_text, message=unquote_plus(message))
+
+        self._send_html(body)
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -45,7 +44,7 @@ class RegressionWebHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Route not found")
 
     def _save_requirement(self) -> None:
-        settings = load_settings(require_api_key=False)
+        settings = load_settings()
         content_type = self.headers.get("Content-Type", "")
 
         content = ""
@@ -77,23 +76,20 @@ class RegressionWebHandler(BaseHTTPRequestHandler):
         self._redirect("/?message=" + quote_plus(f"Saved requirements to {settings.requirement_file}."))
 
     def _generate_output(self) -> None:
-        try:
-            settings = load_settings(require_api_key=True)
-            agent = RegressionTestCaseAgent(settings=settings)
+        settings = load_settings()
+        agent = RegressionTestCaseAgent(settings=settings)
 
-            output = agent.run()
-            output_path = settings.output_file
-            output_path.write_text(output + "\n", encoding="utf-8")
+        output = agent.run()
+        output_path = Path("output.md")
+        output_path.write_text(output + "\n", encoding="utf-8")
 
-            payload = output_path.read_bytes()
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", "text/markdown; charset=utf-8")
-            self.send_header("Content-Disposition", f'attachment; filename="{output_path.name}"')
-            self.send_header("Content-Length", str(len(payload)))
-            self.end_headers()
-            self.wfile.write(payload)
-        except Exception as exc:
-            self._redirect("/?message=" + quote_plus(f"Generation failed: {exc}"))
+        payload = output_path.read_bytes()
+        self.send_response(HTTPStatus.OK)
+        self.send_header("Content-Type", "text/markdown; charset=utf-8")
+        self.send_header("Content-Disposition", 'attachment; filename="output.md"')
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
 
     def _send_html(self, body: str) -> None:
         payload = body.encode("utf-8")
@@ -129,7 +125,7 @@ class RegressionWebHandler(BaseHTTPRequestHandler):
       form {{ border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }}
       textarea {{ width: 100%; min-height: 220px; }}
       button {{ padding: 0.6rem 1rem; cursor: pointer; }}
-      .msg {{ color: #0b6; margin: 0.7rem 0; white-space: pre-wrap; }}
+      .msg {{ color: #0b6; margin: 0.7rem 0; }}
     </style>
   </head>
   <body>
