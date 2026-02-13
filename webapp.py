@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, unquote_plus, urlparse
-import cgi
 
 from agent import RegressionTestCaseAgent
 from config import load_settings
@@ -21,16 +19,18 @@ class RegressionWebHandler(BaseHTTPRequestHandler):
             self.send_error(HTTPStatus.NOT_FOUND, "Route not found")
             return
 
-        settings = load_settings()
-        requirement_text = ""
-        if settings.requirement_file.exists():
-            requirement_text = settings.requirement_file.read_text(encoding="utf-8")
+        try:
+            settings = load_settings(require_api_key=False)
+            requirement_text = ""
+            if settings.requirement_file.exists():
+                requirement_text = settings.requirement_file.read_text(encoding="utf-8")
 
-        query = parse_qs(parsed.query)
-        message = query.get("message", [""])[0]
-        body = self._render_index(requirement_text=requirement_text, message=unquote_plus(message))
-
-        self._send_html(body)
+            query = parse_qs(parsed.query)
+            message = query.get("message", [""])[0]
+            body = self._render_index(requirement_text=requirement_text, message=unquote_plus(message))
+            self._send_html(body)
+        except Exception as exc:  # pragma: no cover - defensive top-level request handling
+            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(exc))
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urlparse(self.path)
@@ -44,28 +44,23 @@ class RegressionWebHandler(BaseHTTPRequestHandler):
         self.send_error(HTTPStatus.NOT_FOUND, "Route not found")
 
     def _save_requirement(self) -> None:
-        settings = load_settings()
+        settings = load_settings(require_api_key=False)
         content_type = self.headers.get("Content-Type", "")
+        length = int(self.headers.get("Content-Length", "0"))
+        payload = self.rfile.read(length)
 
         content = ""
         if content_type.startswith("multipart/form-data"):
-            form = cgi.FieldStorage(
-                fp=self.rfile,
-                headers=self.headers,
-                environ={"REQUEST_METHOD": "POST", "CONTENT_TYPE": content_type},
-            )
+            form_data = self._parse_multipart_form_data(content_type=content_type, payload=payload)
+            file_value = form_data.get("requirement_file", "")
+            text_value = form_data.get("requirement_text", "")
 
-            uploaded = form["requirement_file"] if "requirement_file" in form else None
-            text_value = form.getvalue("requirement_text", "")
-
-            if uploaded is not None and getattr(uploaded, "filename", ""):
-                content = uploaded.file.read().decode("utf-8").strip()
+            if isinstance(file_value, str) and file_value.strip():
+                content = file_value.strip()
             elif isinstance(text_value, str):
                 content = text_value.strip()
         else:
-            length = int(self.headers.get("Content-Length", "0"))
-            payload = self.rfile.read(length).decode("utf-8")
-            data = parse_qs(payload)
+            data = parse_qs(payload.decode("utf-8", errors="replace"))
             content = data.get("requirement_text", [""])[0].strip()
 
         if not content:
@@ -76,20 +71,23 @@ class RegressionWebHandler(BaseHTTPRequestHandler):
         self._redirect("/?message=" + quote_plus(f"Saved requirements to {settings.requirement_file}."))
 
     def _generate_output(self) -> None:
-        settings = load_settings()
-        agent = RegressionTestCaseAgent(settings=settings)
+        try:
+            settings = load_settings(require_api_key=True)
+            agent = RegressionTestCaseAgent(settings=settings)
 
-        output = agent.run()
-        output_path = Path("output.md")
-        output_path.write_text(output + "\n", encoding="utf-8")
+            output = agent.run()
+            output_path = settings.output_file
+            output_path.write_text(output + "\n", encoding="utf-8")
 
-        payload = output_path.read_bytes()
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "text/markdown; charset=utf-8")
-        self.send_header("Content-Disposition", 'attachment; filename="output.md"')
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
+            payload = output_path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "text/markdown; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{output_path.name}"')
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+        except Exception as exc:
+            self._redirect("/?message=" + quote_plus(f"Generation failed: {exc}"))
 
     def _send_html(self, body: str) -> None:
         payload = body.encode("utf-8")
@@ -103,6 +101,60 @@ class RegressionWebHandler(BaseHTTPRequestHandler):
         self.send_response(HTTPStatus.SEE_OTHER)
         self.send_header("Location", location)
         self.end_headers()
+
+    @staticmethod
+    def _parse_multipart_form_data(content_type: str, payload: bytes) -> dict[str, str]:
+        """Parse multipart/form-data body without relying on deprecated `cgi` module."""
+
+        boundary = ""
+        for chunk in content_type.split(";"):
+            piece = chunk.strip()
+            if piece.startswith("boundary="):
+                boundary = piece.split("=", 1)[1].strip('"')
+                break
+
+        if not boundary:
+            return {}
+
+        parsed: dict[str, str] = {}
+        delimiter = f"--{boundary}".encode("utf-8")
+        for part in payload.split(delimiter):
+            part = part.strip()
+            if not part or part == b"--":
+                continue
+
+            if part.endswith(b"--"):
+                part = part[:-2]
+
+            if b"\r\n\r\n" not in part:
+                continue
+
+            raw_headers, raw_value = part.split(b"\r\n\r\n", 1)
+            value = raw_value.rstrip(b"\r\n").decode("utf-8", errors="replace")
+            header_text = raw_headers.decode("utf-8", errors="replace")
+
+            name = ""
+            filename = ""
+            for header_line in header_text.split("\r\n"):
+                if "Content-Disposition:" not in header_line:
+                    continue
+
+                for section in header_line.split(";"):
+                    item = section.strip()
+                    if item.startswith("name="):
+                        name = item.split("=", 1)[1].strip('"')
+                    elif item.startswith("filename="):
+                        filename = item.split("=", 1)[1].strip('"')
+
+            if not name:
+                continue
+
+            if filename and not value.strip():
+                continue
+
+            parsed[name] = value
+
+        return parsed
 
     @staticmethod
     def _render_index(requirement_text: str, message: str) -> str:
@@ -125,7 +177,7 @@ class RegressionWebHandler(BaseHTTPRequestHandler):
       form {{ border: 1px solid #ddd; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }}
       textarea {{ width: 100%; min-height: 220px; }}
       button {{ padding: 0.6rem 1rem; cursor: pointer; }}
-      .msg {{ color: #0b6; margin: 0.7rem 0; }}
+      .msg {{ color: #0b6; margin: 0.7rem 0; white-space: pre-wrap; }}
     </style>
   </head>
   <body>
