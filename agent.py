@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-
-from openai import OpenAI
+from typing import Any
 
 from config import Settings
 from prompt import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
@@ -15,7 +14,18 @@ class RegressionTestCaseAgent:
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
-        self._client = OpenAI(api_key=settings.openai_api_key)
+        self._client = self._build_openai_client(api_key=settings.openai_api_key)
+
+    @staticmethod
+    def _build_openai_client(api_key: str) -> Any:
+        try:
+            from openai import OpenAI
+        except ModuleNotFoundError as exc:
+            raise ModuleNotFoundError(
+                "The 'openai' package is required. Install dependencies with `pip install -r requirements.txt`."
+            ) from exc
+
+        return OpenAI(api_key=api_key)
 
     def read_requirements(self, requirement_file: Path) -> str:
         """Read user stories / functional requirements from the configured file."""

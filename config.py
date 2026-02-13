@@ -22,6 +22,21 @@ class Settings:
 
 
 def _load_env_file(env_file: str = ".env") -> None:
+    """Load environment variables on demand from a .env file without third-party deps."""
+
+    env_path = Path(env_file)
+    if not env_path.exists():
+        return
+
+    for raw_line in env_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        key = key.strip()
+        value = value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
     """Load environment variables on demand from the provided env file."""
 
     load_dotenv(dotenv_path=env_file, override=False)
