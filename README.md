@@ -30,7 +30,7 @@ LLM_PROVIDER=openai
 OPENAI_MODEL=gpt-4o-mini
 OLLAMA_HOST=http://localhost:11434
 REQUIREMENT_FILE=requirement.txt
-OUTPUT_FILE=output.md
+OUTPUT_FILE=output.md  # reserved for future extension; web app always writes output.md
 ```
 
 ## Run
@@ -45,4 +45,9 @@ Open: `http://localhost:8000`
 
 1. Upload a file or paste user stories in the textbox and click **Save User Story** (writes to `requirement.txt`).
 2. Click **Generate**.
-3. The app runs the LLM agent, writes generated regression test cases to `output.md`, and automatically downloads `output.md`.
+3. The app runs the LLM agent, always writes generated regression test cases to `output.md`, and automatically downloads `output.md`.
+
+
+## Changelog
+
+- See `CHANGELOG.md` for recent updates and merge-visible change history.

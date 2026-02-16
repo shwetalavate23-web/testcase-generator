@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, quote_plus, unquote_plus, urlparse
 
 from agent import RegressionTestCaseAgent
@@ -76,7 +77,7 @@ class RegressionWebHandler(BaseHTTPRequestHandler):
             agent = RegressionTestCaseAgent(settings=settings)
 
             output = agent.run()
-            output_path = settings.output_file
+            output_path = Path("output.md")
             output_path.write_text(output + "\n", encoding="utf-8")
 
             payload = output_path.read_bytes()
