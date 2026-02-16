@@ -6,8 +6,6 @@ from dataclasses import dataclass
 from pathlib import Path
 import os
 
-from dotenv import load_dotenv
-
 
 @dataclass(frozen=True)
 class Settings:
@@ -37,12 +35,9 @@ def _load_env_file(env_file: str = ".env") -> None:
         key = key.strip()
         value = value.strip().strip('"').strip("'")
         os.environ.setdefault(key, value)
-    """Load environment variables on demand from the provided env file."""
-
-    load_dotenv(dotenv_path=env_file, override=False)
 
 
-def load_settings(env_file: str = ".env") -> Settings:
+def load_settings(env_file: str = ".env", require_api_key: bool = True) -> Settings:
     """Load and validate runtime settings."""
 
     _load_env_file(env_file=env_file)
@@ -52,14 +47,14 @@ def load_settings(env_file: str = ".env") -> Settings:
     openai_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini").strip()
     ollama_host = os.getenv("OLLAMA_HOST", "http://localhost:11434").strip()
     requirement_file = Path(os.getenv("REQUIREMENT_FILE", "requirement.txt")).expanduser()
-    output_file = Path(os.getenv("OUTPUT_FILE", "regression_test_cases.md")).expanduser()
+    output_file = Path(os.getenv("OUTPUT_FILE", "output.md")).expanduser()
 
     if llm_provider != "openai":
         raise ValueError(
             f"Unsupported LLM_PROVIDER '{llm_provider}'. Only 'openai' is supported right now."
         )
 
-    if not openai_api_key:
+    if require_api_key and not openai_api_key:
         raise ValueError("OPENAI_API_KEY is required. Set it in your .env file.")
 
     return Settings(
